@@ -30,6 +30,8 @@ class CoreDB:
         self._store: dict[str, Any] = {}
         self._value_type = value_type
         self._backup: dict[str, Any] | None = None
+        self._log_path: str = "db_log.txt"
+        self._recover()
     
     @property
     def size(self) -> int:
@@ -45,6 +47,9 @@ class CoreDB:
         Inserts or updates a key-value pair in the database.
         """
         self._store[key] = value
+        with open(self._log_path, "a", encoding="utf-8") as f:
+            f.write(f"SET {key} {value}\n")
+
 
     @validate_payload
     def __getitem__(self, key: str) -> Any:
@@ -63,7 +68,11 @@ class CoreDB:
         """
         Deletes a key-value pair. Fails silently if the key does not exist.
         """
-        self._store.pop(key, None)
+        if key in self._store:
+            self._store.pop(key)
+            with open(self._log_path, "a", encoding="utf-8") as f:
+                f.write(f"DEL {key}\n")
+
         
 
     @validate_payload
@@ -75,6 +84,8 @@ class CoreDB:
     
     def clear(self) -> None:
         self._store.clear()
+        with open(self._log_path, "w", encoding="utf-8") as f:
+            pass
 
     def __len__(self) -> int:
         return self.size
@@ -91,3 +102,28 @@ class CoreDB:
             self._store = self._backup
             print("[Rollback]: Transaction failed, reverting database to previous state")
         self._backup = None
+
+    def _read_log_lazily(self):
+        try:
+            with open(self._log_path, "r", encoding="utf-8") as f:
+                for l in f:
+                    yield l.strip()
+        except FileNotFoundError:
+            return
+
+    def _recover(self):
+        for l in self._read_log_lazily():
+            tokens = l.split(maxsplit=2)
+            if tokens[0] == "SET":
+                value = self._value_type(tokens[2])
+                self._store[tokens[1]] = value
+            elif tokens[0] == "DEL":
+                self._store.pop(tokens[1])
+
+
+    def find(self, condition: Callable[[Any], bool]) -> dict[str, Any]:
+        return (dict(filter(lambda x: condition(x[1]), self._store.items())))
+    
+    def __iter__(self):
+        return iter(self._store)
+
