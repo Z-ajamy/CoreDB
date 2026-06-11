@@ -1,5 +1,6 @@
 import functools
 from typing import Any, Callable
+import time
 
 def validate_payload(func: Callable[..., Any]) -> Callable[..., Any]:
     """
@@ -127,3 +128,26 @@ class CoreDB:
     def __iter__(self):
         return iter(self._store)
 
+class VolatileDB(CoreDB):
+    def __init__(self, value_type: type, ttl_seconds: int):
+        super().__init__(value_type)
+        self._ttl = ttl_seconds
+        self._timestamps: dict[str, float] = {}
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._timestamps[key] = time.time()
+        super().__setitem__(key, value)
+
+    def __getitem__(self, key: str):
+        try:
+            t = time.time() - self._timestamps[key]
+            if t > self._ttl:
+                self._timestamps.pop(key)
+                super().__delitem__(key)
+                return None
+            else:
+                return super().__getitem__(key)
+        except KeyError:
+            return None
+
+    
