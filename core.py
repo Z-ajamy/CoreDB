@@ -26,9 +26,10 @@ class CoreDB:
     In-memory Key-Value store engine designed with strict 
     type hinting and architectural safety mechanisms.
     """
-    def __init__(self, value_type: Any):
+    def __init__(self, value_type: type):
         self._store: dict[str, Any] = {}
         self._value_type = value_type
+        self._backup: dict[str, Any] | None = None
     
     @property
     def size(self) -> int:
@@ -80,3 +81,13 @@ class CoreDB:
 
     def __bool__(self) -> bool:
         return bool(self._store) 
+
+    def __enter__(self):
+        self._backup = self._store.copy()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, traceback):
+        if exc_type:
+            self._store = self._backup
+            print("[Rollback]: Transaction failed, reverting database to previous state")
+        self._backup = None
